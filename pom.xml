@@ -12,7 +12,7 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.xzhl</groupId>
+    <groupId>com.derrick</groupId>
     <artifactId>drone-location</artifactId>
     <version>1.0.0</version>
     <name>drone-location</name>
