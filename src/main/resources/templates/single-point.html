@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>单点位实时推送 - 无人机位置推送系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-drone"></i> 无人机位置推送系统
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/single-point">
+                            <i class="fas fa-map-marker-alt"></i> 单点位推送
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/route-generation">
+                            <i class="fas fa-route"></i> 航线生成
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/task-execution">
+                            <i class="fas fa-play-circle"></i> 任务执行
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/auto-route">
+                            <i class="fas fa-magic"></i> 自动航线
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/task-list">
+                            <i class="fas fa-list"></i> 任务列表
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="row">
+            <div class="col-12">
+                <div class="card animate-fade-in">
+                    <div class="card-header">
+                        <i class="fas fa-cog"></i> 配置参数
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <label class="form-label">无人机SN码</label>
+                                <input type="text" class="form-control" id="droneSn" value="DRONE001">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">飞行高度 (米)</label>
+                                <input type="number" class="form-control" id="altitude" value="100">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">飞行速度 (m/s)</label>
+                                <input type="number" class="form-control" id="speed" value="10">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Kafka Topic</label>
+                                <input type="text" class="form-control" id="kafkaTopic" value="drone-location-topic" readonly>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card animate-slide-up">
+                    <div class="card-header">
+                        <i class="fas fa-map"></i> 地图 - 点击任意位置发送位置数据
+                    </div>
+                    <div class="card-body">
+                        <div id="map"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card animate-slide-up" style="animation-delay: 0.1s;">
+                    <div class="card-header">
+                        <i class="fas fa-history"></i> 发送记录
+                    </div>
+                    <div class="card-body">
+                        <div class="message-log" id="messageLog"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 无人机位置推送系统. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            var map = L.map('map').setView([39.9042, 116.4074], 10);
+            
+            L.tileLayer('https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+                attribution: '&copy; 高德地图'
+            }).addTo(map);
+            
+            var markers = L.layerGroup().addTo(map);
+            var messageCount = 0;
+            var isSending = false;
+
+            map.on('click', function(e) {
+                if (isSending) {
+                    return;
+                }
+                
+                var lat = e.latlng.lat;
+                var lng = e.latlng.lng;
+                
+                var droneSn = $('#droneSn').val();
+                var altitude = parseFloat($('#altitude').val());
+                var speed = parseFloat($('#speed').val());
+                
+                var droneIcon = L.divIcon({
+                    className: 'drone-marker',
+                    iconSize: [24, 24],
+                    iconAnchor: [12, 12]
+                });
+                
+                var marker = L.marker([lat, lng], { icon: droneIcon }).addTo(map);
+                markers.addLayer(marker);
+                
+                marker.bindPopup('<b>无人机位置</b><br>' +
+                                'SN: ' + droneSn + '<br>' +
+                                '纬度: ' + lat.toFixed(8) + '<br>' +
+                                '经度: ' + lng.toFixed(8) + '<br>' +
+                                '高度: ' + altitude + 'm<br>' +
+                                '速度: ' + speed + 'm/s').openPopup();
+                
+                sendLocationData(droneSn, lat, lng, altitude, speed);
+            });
+
+            function sendLocationData(sn, lat, lng, altitude, speed) {
+                if (isSending) {
+                    return;
+                }
+                
+                isSending = true;
+                
+                $.ajax({
+                    url: '/api/location/send-simple',
+                    method: 'POST',
+                    data: {
+                        sn: sn,
+                        lat: lat,
+                        lng: lng,
+                        altitude: altitude,
+                        speed: speed
+                    },
+                    success: function(response) {
+                        messageCount++;
+                        addMessageLog(response.data, true);
+                        showAlert('位置数据发送成功', 'success');
+                    },
+                    error: function(xhr, status, error) {
+                        addMessageLog({ error: error }, false);
+                        showAlert('发送失败: ' + error, 'danger');
+                    },
+                    complete: function() {
+                        isSending = false;
+                    }
+                });
+            }
+
+            function addMessageLog(data, success) {
+                var timestamp = new Date().toLocaleString();
+                var logHtml;
+                
+                if (success) {
+                    logHtml = '<div class="message-log-item message-log-success animate-fade-in">' +
+                             '<div class="message-log-time">' + timestamp + '</div>' +
+                             '<div class="message-log-content">' +
+                             'SN: ' + data.sn + ', 纬度: ' + data.lat.toFixed(8) + 
+                             ', 经度: ' + data.lng.toFixed(8) + 
+                             ', 高度: ' + data.altitude + 'm, 速度: ' + data.speed + 'm/s' +
+                             '</div></div>';
+                } else {
+                    logHtml = '<div class="message-log-item message-log-error animate-fade-in">' +
+                             '<div class="message-log-time">' + timestamp + '</div>' +
+                             '<div class="message-log-content">发送失败: ' + data.error +
+                             '</div></div>';
+                }
+                
+                var logContainer = $('#messageLog');
+                logContainer.prepend(logHtml);
+                
+                var maxLogs = 50;
+                if (logContainer.children('.message-log-item').length > maxLogs) {
+                    logContainer.children('.message-log-item').eq(maxLogs).remove();
+                }
+            }
+
+            function showAlert(message, type) {
+                type = type || 'info';
+                var alertClass = 'alert alert-' + type;
+                var alertHtml = '<div class="' + alertClass + ' alert-dismissible" role="alert">' +
+                               '<strong>[' + new Date().toLocaleTimeString() + ']</strong> ' + message +
+                               '<button type="button" class="btn-close" data-bs-dismiss="alert">&times;</button>' +
+                               '</div>';
+                
+                var alertContainer = $('#alertContainer');
+                if (alertContainer.length === 0) {
+                    alertContainer = $('<div id="alertContainer"></div>').prependTo('body');
+                }
+                
+                alertContainer.prepend(alertHtml);
+                
+                setTimeout(function() {
+                    alertContainer.find('.alert').first().fadeOut(300, function() {
+                        $(this).remove();
+                    });
+                }, 5000);
+            }
+        });
+    </script>
+</body>
+</html>

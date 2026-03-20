@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>航线生成 - 无人机位置推送系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-drone"></i> 无人机位置推送系统
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/single-point">
+                            <i class="fas fa-map-marker-alt"></i> 单点位推送
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/route-generation">
+                            <i class="fas fa-route"></i> 航线生成
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/task-execution">
+                            <i class="fas fa-play-circle"></i> 任务执行
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/auto-route">
+                            <i class="fas fa-magic"></i> 自动航线
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/task-list">
+                            <i class="fas fa-list"></i> 任务列表
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="row">
+            <div class="col-12">
+                <div class="card animate-fade-in">
+                    <div class="card-header">
+                        <i class="fas fa-cog"></i> 配置参数
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <label class="form-label">任务名称</label>
+                                <input type="text" class="form-control" id="taskName" value="手动航线任务">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">无人机SN码</label>
+                                <input type="text" class="form-control" id="droneSn" value="DRONE001">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">飞行高度 (米)</label>
+                                <input type="number" class="form-control" id="altitude" value="100">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">飞行速度 (m/s)</label>
+                                <input type="number" class="form-control" id="speed" value="10">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card animate-slide-up">
+                    <div class="card-header">
+                        <i class="fas fa-map"></i> 地图 - 连续点击创建航点
+                    </div>
+                    <div class="card-body">
+                        <div id="map"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card animate-slide-up" style="animation-delay: 0.1s;">
+                    <div class="card-header">
+                        <i class="fas fa-tasks"></i> 操作
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <button class="btn btn-primary w-100" onclick="exportRoute()">
+                                    <i class="fas fa-download"></i> 导出航线
+                                </button>
+                            </div>
+                            <div class="col-md-3">
+                                <button class="btn btn-success w-100" onclick="saveTask()">
+                                    <i class="fas fa-save"></i> 保存任务
+                                </button>
+                            </div>
+                            <div class="col-md-3">
+                                <button class="btn btn-warning w-100" onclick="clearRoute()">
+                                    <i class="fas fa-trash"></i> 清除航线
+                                </button>
+                            </div>
+                            <div class="col-md-3">
+                                <button class="btn btn-danger w-100" onclick="undoLastPoint()">
+                                    <i class="fas fa-undo"></i> 撤销上一点
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card animate-slide-up" style="animation-delay: 0.2s;">
+                    <div class="card-header">
+                        <i class="fas fa-list"></i> 航点列表
+                    </div>
+                    <div class="card-body">
+                        <div class="waypoint-list" id="waypointList"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 无人机位置推送系统. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            var map = L.map('map').setView([39.9042, 116.4074], 10);
+            
+            L.tileLayer('https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+                attribution: '&copy; 高德地图'
+            }).addTo(map);
+            
+            var waypoints = [];
+            var markers = L.layerGroup().addTo(map);
+            var polyline = null;
+
+            map.on('click', function(e) {
+                var lat = e.latlng.lat;
+                var lng = e.latlng.lng;
+                
+                var waypoint = {
+                    lat: lat,
+                    lng: lng,
+                    altitude: parseFloat($('#altitude').val()),
+                    speed: parseFloat($('#speed').val())
+                };
+                
+                waypoints.push(waypoint);
+                
+                var waypointIcon = L.divIcon({
+                    className: 'waypoint-marker',
+                    iconSize: [18, 18],
+                    iconAnchor: [9, 9]
+                });
+                
+                var marker = L.marker([lat, lng], { icon: waypointIcon }).addTo(map);
+                markers.addLayer(marker);
+                
+                marker.bindPopup('<b>航点 ' + waypoints.length + '</b><br>' +
+                                '纬度: ' + lat.toFixed(8) + '<br>' +
+                                '经度: ' + lng.toFixed(8) + '<br>' +
+                                '高度: ' + waypoint.altitude + 'm<br>' +
+                                '速度: ' + waypoint.speed + 'm/s');
+                
+                updatePolyline();
+                updateWaypointList();
+            });
+
+            function updatePolyline() {
+                if (polyline) {
+                    map.removeLayer(polyline);
+                }
+                
+                if (waypoints.length > 1) {
+                    var latlngs = waypoints.map(function(wp) {
+                        return [wp.lat, wp.lng];
+                    });
+                    
+                    polyline = L.polyline(latlngs, {
+                        color: '#06b6d4',
+                        weight: 3,
+                        opacity: 0.8,
+                        dashArray: '10, 5'
+                    }).addTo(map);
+                }
+            }
+
+            function updateWaypointList() {
+                var listHtml = '';
+                waypoints.forEach(function(wp, index) {
+                    listHtml += '<div class="waypoint-item animate-fade-in">' +
+                               '<div class="waypoint-index">' + (index + 1) + '</div>' +
+                               '<div class="waypoint-coords">' +
+                               '纬度: ' + wp.lat.toFixed(8) + ', ' +
+                               '经度: ' + wp.lng.toFixed(8) +
+                               '</div>' +
+                               '<div class="waypoint-actions">' +
+                               '<button class="waypoint-btn" onclick="removeWaypoint(' + index + ')">删除</button>' +
+                               '</div></div>';
+                });
+                
+                $('#waypointList').html(listHtml);
+            }
+
+            window.removeWaypoint = function(index) {
+                waypoints.splice(index, 1);
+                markers.clearLayers();
+                waypoints.forEach(function(wp, i) {
+                    var waypointIcon = L.divIcon({
+                        className: 'waypoint-marker',
+                        iconSize: [18, 18],
+                        iconAnchor: [9, 9]
+                    });
+                    
+                    var marker = L.marker([wp.lat, wp.lng], { icon: waypointIcon }).addTo(map);
+                    markers.addLayer(marker);
+                    
+                    marker.bindPopup('<b>航点 ' + (i + 1) + '</b><br>' +
+                                    '纬度: ' + wp.lat.toFixed(8) + '<br>' +
+                                    '经度: ' + wp.lng.toFixed(8) + '<br>' +
+                                    '高度: ' + wp.altitude + 'm<br>' +
+                                    '速度: ' + wp.speed + 'm/s');
+                });
+                
+                updatePolyline();
+                updateWaypointList();
+            };
+
+            window.exportRoute = function() {
+                if (waypoints.length === 0) {
+                    alert('请先创建航点！');
+                    return;
+                }
+                
+                var routeData = {
+                    taskName: $('#taskName').val(),
+                    droneSn: $('#droneSn').val(),
+                    altitude: parseFloat($('#altitude').val()),
+                    speed: parseFloat($('#speed').val()),
+                    waypoints: waypoints
+                };
+                
+                var dataStr = JSON.stringify(routeData, null, 2);
+                var dataBlob = new Blob([dataStr], { type: 'application/json' });
+                var url = URL.createObjectURL(dataBlob);
+                var link = document.createElement('a');
+                link.href = url;
+                link.download = 'route_' + new Date().getTime() + '.json';
+                link.click();
+            };
+
+            window.saveTask = function() {
+                if (waypoints.length === 0) {
+                    alert('请先创建航点！');
+                    return;
+                }
+                
+                var taskData = {
+                    taskName: $('#taskName').val(),
+                    droneSn: $('#droneSn').val(),
+                    altitude: parseFloat($('#altitude').val()),
+                    speed: parseFloat($('#speed').val()),
+                    waypoints: waypoints
+                };
+                
+                $.ajax({
+                    url: '/api/task/save',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(taskData),
+                    success: function(response) {
+                        alert('任务保存成功！');
+                    },
+                    error: function(xhr, status, error) {
+                        alert('保存失败: ' + error);
+                    }
+                });
+            };
+
+            window.clearRoute = function() {
+                if (waypoints.length === 0) {
+                    return;
+                }
+                
+                if (confirm('确定要清除所有航点吗？')) {
+                    waypoints = [];
+                    markers.clearLayers();
+                    if (polyline) {
+                        map.removeLayer(polyline);
+                        polyline = null;
+                    }
+                    updateWaypointList();
+                }
+            };
+
+            window.undoLastPoint = function() {
+                if (waypoints.length === 0) {
+                    return;
+                }
+                
+                waypoints.pop();
+                markers.clearLayers();
+                waypoints.forEach(function(wp, i) {
+                    var waypointIcon = L.divIcon({
+                        className: 'waypoint-marker',
+                        iconSize: [18, 18],
+                        iconAnchor: [9, 9]
+                    });
+                    
+                    var marker = L.marker([wp.lat, wp.lng], { icon: waypointIcon }).addTo(map);
+                    markers.addLayer(marker);
+                    
+                    marker.bindPopup('<b>航点 ' + (i + 1) + '</b><br>' +
+                                    '纬度: ' + wp.lat.toFixed(8) + '<br>' +
+                                    '经度: ' + wp.lng.toFixed(8) + '<br>' +
+                                    '高度: ' + wp.altitude + 'm<br>' +
+                                    '速度: ' + wp.speed + 'm/s');
+                });
+                
+                updatePolyline();
+                updateWaypointList();
+            };
+        });
+    </script>
+</body>
+</html>

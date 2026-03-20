@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>无人机位置推送系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-drone"></i>
+                <span>无人机位置推送系统</span>
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/single-point">
+                            <i class="fas fa-map-marker-alt"></i>
+                            <span>单点位推送</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/route-generation">
+                            <i class="fas fa-route"></i>
+                            <span>航线生成</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/task-execution">
+                            <i class="fas fa-play-circle"></i>
+                            <span>任务执行</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/auto-route">
+                            <i class="fas fa-magic"></i>
+                            <span>自动航线</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/task-list">
+                            <i class="fas fa-list"></i>
+                            <span>任务列表</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="hero-section animate-fade-in">
+            <div class="hero-content">
+                <h1 class="hero-title">无人机位置推送系统</h1>
+                <p class="hero-subtitle">专业的无人机航线规划与实时位置监控平台</p>
+                <div class="d-grid d-grid-4" style="max-width: 800px; margin: 0 auto;">
+                    <a href="/single-point" class="btn btn-primary">
+                        <i class="fas fa-map-marker-alt"></i>
+                        <span>单点位实时推送</span>
+                    </a>
+                    <a href="/route-generation" class="btn btn-success">
+                        <i class="fas fa-route"></i>
+                        <span>手动创建航线</span>
+                    </a>
+                    <a href="/auto-route" class="btn btn-warning">
+                        <i class="fas fa-magic"></i>
+                        <span>自动生成航线</span>
+                    </a>
+                    <a href="/task-execution" class="btn btn-info">
+                        <i class="fas fa-play-circle"></i>
+                        <span>执行任务</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-12">
+                <div class="card animate-slide-up">
+                    <div class="card-header">
+                        <i class="fas fa-chart-line"></i>
+                        <span>系统概览</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-grid d-grid-4">
+                            <div class="stats-card">
+                                <div class="stats-number" id="totalTasks">0</div>
+                                <div class="stats-label">总任务数</div>
+                            </div>
+                            <div class="stats-card">
+                                <div class="stats-number" id="executingTasks">0</div>
+                                <div class="stats-label">执行中</div>
+                            </div>
+                            <div class="stats-card">
+                                <div class="stats-number" id="totalWaypoints">0</div>
+                                <div class="stats-label">总航点数</div>
+                            </div>
+                            <div class="stats-card">
+                                <div class="stats-number" id="kafkaMessages">0</div>
+                                <div class="stats-label">Kafka消息</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <div class="card animate-slide-up" style="animation-delay: 0.1s;">
+                    <div class="card-header">
+                        <i class="fas fa-map"></i>
+                        <span>地图预览</span>
+                    </div>
+                    <div class="card-body">
+                        <div id="map" style="height: 400px;"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card animate-slide-up" style="animation-delay: 0.2s;">
+                    <div class="card-header">
+                        <i class="fas fa-bolt"></i>
+                        <span>快速操作</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-grid d-grid-2">
+                            <a href="/single-point" class="btn btn-primary">
+                                <i class="fas fa-map-marker-alt"></i>
+                                <span>单点位实时推送</span>
+                            </a>
+                            <a href="/route-generation" class="btn btn-success">
+                                <i class="fas fa-route"></i>
+                                <span>手动创建航线</span>
+                            </a>
+                            <a href="/auto-route" class="btn btn-warning">
+                                <i class="fas fa-magic"></i>
+                                <span>自动生成航线</span>
+                            </a>
+                            <a href="/task-execution" class="btn btn-info">
+                                <i class="fas fa-play-circle"></i>
+                                <span>执行任务</span>
+                            </a>
+                            <a href="/task-list" class="btn btn-secondary">
+                                <i class="fas fa-list"></i>
+                                <span>查看任务列表</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card animate-slide-up" style="animation-delay: 0.3s;">
+                    <div class="card-header">
+                        <i class="fas fa-star"></i>
+                        <span>核心功能</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="feature-grid">
+                            <div class="feature-card">
+                                <div class="feature-icon">
+                                    <i class="fas fa-map-marker-alt"></i>
+                                </div>
+                                <div class="feature-title">单点位推送</div>
+                                <div class="feature-description">实时推送无人机位置数据到Kafka消息队列，支持自定义飞行参数</div>
+                            </div>
+                            <div class="feature-card">
+                                <div class="feature-icon">
+                                    <i class="fas fa-route"></i>
+                                </div>
+                                <div class="feature-title">航线生成</div>
+                                <div class="feature-description">手动创建多航点航线，支持可视化编辑和实时预览</div>
+                            </div>
+                            <div class="feature-card">
+                                <div class="feature-icon">
+                                    <i class="fas fa-magic"></i>
+                                </div>
+                                <div class="feature-title">自动航线</div>
+                                <div class="feature-description">基于区域框选自动生成蛇形或螺旋形航线，智能规划最优路径</div>
+                            </div>
+                            <div class="feature-card">
+                                <div class="feature-icon">
+                                    <i class="fas fa-play-circle"></i>
+                                </div>
+                                <div class="feature-title">任务执行</div>
+                                <div class="feature-description">加载航线文件并执行任务，实时监控飞行进度和状态</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 无人机位置推送系统. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            var map = L.map('map').setView([39.9042, 116.4074], 10);
+            
+            L.tileLayer('https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+                attribution: '&copy; 高德地图'
+            }).addTo(map);
+
+            function loadStats() {
+                $.get('/api/task/list', function(response) {
+                    if (response.success) {
+                        var tasks = response.data;
+                        var totalTasks = tasks.length;
+                        var executingTasks = tasks.filter(function(t) { return t.status === 'EXECUTING'; }).length;
+                        var totalWaypoints = tasks.reduce(function(sum, t) { return sum + (t.totalWaypoints || 0); }, 0);
+
+                        $('#totalTasks').text(totalTasks);
+                        $('#executingTasks').text(executingTasks);
+                        $('#totalWaypoints').text(totalWaypoints);
+                    }
+                });
+            }
+
+            loadStats();
+            setInterval(loadStats, 5000);
+        });
+    </script>
+</body>
+</html>
