@@ -175,6 +175,7 @@
             var isExecuting = false;
             var currentIndex = 0;
             var executionInterval = null;
+            var currentDroneSn = 'DRONE001'; // 默认 SN 码
 
             $('#routeFile').change(function(e) {
                 var file = e.target.files[0];
@@ -186,6 +187,8 @@
                         var data = JSON.parse(e.target.result);
                         if (data.waypoints && Array.isArray(data.waypoints)) {
                             waypoints = data.waypoints;
+                            // 从文件中读取无人机 SN 码，如果没有则使用默认值
+                            currentDroneSn = data.droneSn || 'DRONE001';
                             displayRoute();
                             $('#startBtn').prop('disabled', false);
                         } else {
@@ -284,14 +287,14 @@
                         url: '/api/location/send-simple',
                         method: 'POST',
                         data: {
-                            sn: 'DRONE001',
+                            sn: currentDroneSn,
                             lat: wp.lat,
                             lng: wp.lng,
                             altitude: wp.altitude,
                             speed: wp.speed
                         },
                         success: function(response) {
-                            console.log('航点 ' + (currentIndex + 1) + ' 发送成功');
+                            console.log('航点 ' + (currentIndex + 1) + ' 发送成功，SN: ' + currentDroneSn);
                         },
                         error: function(xhr, status, error) {
                             console.error('航点 ' + (currentIndex + 1) + ' 发送失败：' + error);
@@ -326,7 +329,7 @@
                 
                 var taskData = {
                     taskName: '执行任务_' + new Date().getTime(),
-                    droneSn: 'DRONE001',
+                    droneSn: currentDroneSn,
                     altitude: waypoints[0].altitude,
                     speed: waypoints[0].speed,
                     waypoints: waypoints
