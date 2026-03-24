@@ -8,6 +8,7 @@ import com.derrick.dronelocation.constants.DefaultDirection;
 import com.derrick.dronelocation.dto.KafkaLocationData;
 import com.derrick.dronelocation.dto.KafkaLocationMessage;
 import com.derrick.dronelocation.dto.LocationData;
+import com.derrick.dronelocation.util.GeoUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,9 +34,17 @@ public class KafkaProducerService {
 
     public void sendLocationData(LocationData locationData) {
         try {
+            // locationData 的经纬度从高德地图的 GCJ-02 坐标系改为标准的 WSG84 坐标系
+            double[] wgs84Coords = GeoUtils.gcj02ToWgs84(
+                    locationData.getLat().doubleValue(),
+                    locationData.getLng().doubleValue()
+            );
+            locationData.setLat(java.math.BigDecimal.valueOf(wgs84Coords[0]));
+            locationData.setLng(java.math.BigDecimal.valueOf(wgs84Coords[1]));
+
             String jsonMessage = objectMapper.writeValueAsString(locationData);
             kafkaTemplate.send(topic, jsonMessage);
-            log.info("发送位置数据到Kafka成功: {}", jsonMessage);
+            log.info("发送位置数据到 Kafka 成功：{}", jsonMessage);
         } catch (JsonProcessingException e) {
             log.error("序列化位置数据失败", e);
             throw new RuntimeException("序列化位置数据失败", e);
