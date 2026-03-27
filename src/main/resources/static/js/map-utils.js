@@ -1,7 +1,7 @@
 var mapUtils = {
     createMap: function(elementId, center, zoom) {
-        var defaultCenter = center || [39.9042, 116.4074];
-        var defaultZoom = zoom || 10;
+        var defaultCenter = center || [23.1125, 113.3245];
+        var defaultZoom = zoom || 15;
         
         var map = L.map(elementId).setView(defaultCenter, defaultZoom);
         
