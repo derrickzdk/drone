@@ -78,8 +78,7 @@ public class TaskService extends ServiceImpl<TaskMapper, Task> {
             throw new RuntimeException("任务不存在");
         }
 
-        task.setDeleted(DeletedStatus.DELETED);
-        this.updateById(task);
+        this.removeById(taskId);
         log.info("删除任务成功，任务ID: {}", taskId);
     }
 
@@ -96,9 +95,15 @@ public class TaskService extends ServiceImpl<TaskMapper, Task> {
         return convertToDTO(task);
     }
 
+    public List<com.derrick.dronelocation.entity.Waypoint> getTaskWaypoints(Long taskId) {
+        LambdaQueryWrapper<com.derrick.dronelocation.entity.Waypoint> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(com.derrick.dronelocation.entity.Waypoint::getTaskId, taskId);
+        queryWrapper.orderByAsc(com.derrick.dronelocation.entity.Waypoint::getSequenceNum);
+        return waypointMapper.selectList(queryWrapper);
+    }
+
     public List<TaskDTO> getAllTasks() {
         LambdaQueryWrapper<Task> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(Task::getDeleted, DeletedStatus.NOT_DELETED);
         queryWrapper.orderByDesc(Task::getCreatedTime);
         return this.list(queryWrapper).stream()
                 .map(this::convertToDTO)
@@ -107,7 +112,6 @@ public class TaskService extends ServiceImpl<TaskMapper, Task> {
 
     public IPage<TaskDTO> searchTasks(String taskName, LocalDateTime startTime, LocalDateTime endTime, int page, int size, String sortBy, String sortDir) {
         LambdaQueryWrapper<Task> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(Task::getDeleted, DeletedStatus.NOT_DELETED);
 
         if (taskName != null && !taskName.isEmpty()) {
             queryWrapper.like(Task::getTaskName, taskName);
@@ -149,7 +153,6 @@ public class TaskService extends ServiceImpl<TaskMapper, Task> {
     public List<TaskDTO> getTasksByDroneSn(String droneSn) {
         LambdaQueryWrapper<Task> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(Task::getDroneSn, droneSn);
-        queryWrapper.eq(Task::getDeleted, DeletedStatus.NOT_DELETED);
         queryWrapper.orderByDesc(Task::getCreatedTime);
         return this.list(queryWrapper).stream()
                 .map(this::convertToDTO)
@@ -159,7 +162,6 @@ public class TaskService extends ServiceImpl<TaskMapper, Task> {
     public List<TaskDTO> getTasksByStatus(String status) {
         LambdaQueryWrapper<Task> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(Task::getStatus, status);
-        queryWrapper.eq(Task::getDeleted, DeletedStatus.NOT_DELETED);
         queryWrapper.orderByDesc(Task::getCreatedTime);
         return this.list(queryWrapper).stream()
                 .map(this::convertToDTO)

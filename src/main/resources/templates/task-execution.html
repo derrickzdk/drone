@@ -55,6 +55,30 @@
             <div class="col-12">
                 <div class="card animate-fade-in">
                     <div class="card-header">
+                        <i class="fas fa-tasks"></i> 选择任务
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <select class="form-select" id="taskSelect">
+                                    <option value="">请选择任务...</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <button class="btn btn-success w-100" onclick="loadTaskRoute()">
+                                    <i class="fas fa-download"></i> 加载任务航线
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card animate-fade-in">
+                    <div class="card-header">
                         <i class="fas fa-upload"></i> 上传航线文件
                     </div>
                     <div class="card-body">

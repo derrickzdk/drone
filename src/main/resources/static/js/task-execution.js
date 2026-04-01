@@ -7,6 +7,102 @@ $(document).ready(function() {
     var executionWorker = null;
     var isProcessing = false;
 
+    loadTaskList();
+
+    function loadTaskList() {
+        $.ajax({
+            url: '/api/task/list',
+            method: 'GET',
+            success: function(response) {
+                if (response.success && response.data) {
+                    var taskSelect = $('#taskSelect');
+                    taskSelect.empty();
+                    taskSelect.append('<option value="">请选择任务...</option>');
+                    
+                    response.data.forEach(function(task) {
+                        taskSelect.append('<option value="' + task.id + '">' + task.taskName + ' (ID: ' + task.id + ', 航点数: ' + task.totalWaypoints + ')</option>');
+                    });
+                }
+            },
+            error: function(xhr, status, error) {
+                console.error('加载任务列表失败:', error);
+            }
+        });
+    }
+
+    window.loadTaskRoute = function() {
+        var taskId = $('#taskSelect').val();
+        if (!taskId) {
+            mapUtils.showAlert('请先选择任务', 'warning');
+            return;
+        }
+        
+        if (isProcessing) {
+            return;
+        }
+        
+        isProcessing = true;
+        
+        $.ajax({
+            url: '/api/task/' + taskId,
+            method: 'GET',
+            success: function(response) {
+                if (response.success) {
+                    var task = response.data;
+                    loadTaskWaypoints(taskId, task);
+                } else {
+                    mapUtils.showAlert('加载任务失败: ' + response.message, 'danger');
+                    isProcessing = false;
+                }
+            },
+            error: function(xhr, status, error) {
+                mapUtils.showAlert('加载任务失败: ' + error, 'danger');
+                isProcessing = false;
+            }
+        });
+    };
+
+    function loadTaskWaypoints(taskId, task) {
+        $.ajax({
+            url: '/api/task/' + taskId + '/waypoints',
+            method: 'GET',
+            success: function(response) {
+                if (response.success && response.data) {
+                    var waypoints = response.data.map(function(wp) {
+                        return {
+                            sequence: wp.sequenceNum,
+                            lat: wp.latitude,
+                            lng: wp.longitude,
+                            altitude: wp.altitude || task.flightHeight,
+                            speed: wp.speed || task.flightSpeed
+                        };
+                    });
+                    
+                    var routeData = {
+                        taskName: task.taskName,
+                        droneSn: task.droneSn,
+                        flightHeight: task.flightHeight,
+                        flightSpeed: task.flightSpeed,
+                        routeType: task.routeType,
+                        waypoints: waypoints
+                    };
+                    
+                    displayRoute(routeData);
+                    currentRouteData = routeData;
+                    currentTaskId = task.id;
+                    mapUtils.showAlert('任务航线加载成功', 'success');
+                } else {
+                    mapUtils.showAlert('加载航点失败', 'danger');
+                }
+                isProcessing = false;
+            },
+            error: function(xhr, status, error) {
+                mapUtils.showAlert('加载航点失败: ' + error, 'danger');
+                isProcessing = false;
+            }
+        });
+    }
+
     window.loadRouteFile = function() {
         if (isProcessing) {
             return;
@@ -71,12 +167,18 @@ $(document).ready(function() {
             polyline = null;
         }
         
+        currentRouteData = null;
+        currentTaskId = null;
+        
         $('#totalWaypoints').text('0');
         $('#currentIndex').text('0');
         $('#progressBar').css('width', '0%').text('0%');
         
         $('#startBtn').prop('disabled', true);
         $('#stopBtn').prop('disabled', true);
+        
+        $('#taskSelect').val('');
+        $('#routeFile').val('');
     }
 
     window.startExecution = function() {
@@ -94,7 +196,7 @@ $(document).ready(function() {
         if (currentTaskId) {
             startTaskExecution(currentTaskId);
         } else {
-            mapUtils.showAlert('请先保存航线为任务', 'warning');
+            mapUtils.showAlert('请先从任务列表选择任务或保存航线为任务', 'warning');
             isProcessing = false;
         }
     };
@@ -293,6 +395,7 @@ $(document).ready(function() {
                 if (response.success) {
                     currentTaskId = response.data.id;
                     mapUtils.showAlert('任务保存成功，任务ID: ' + currentTaskId, 'success');
+                    loadTaskList();
                 } else {
                     mapUtils.showAlert('保存失败: ' + response.message, 'danger');
                 }

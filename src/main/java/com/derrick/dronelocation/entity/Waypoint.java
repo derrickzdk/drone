@@ -37,6 +37,6 @@ public class Waypoint implements Serializable {
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdTime;
 
-    @TableLogic
+    @TableLogic(value = "0", delval = "1")
     private Integer deleted;
 }

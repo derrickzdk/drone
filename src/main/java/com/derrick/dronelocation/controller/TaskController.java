@@ -73,6 +73,17 @@ public class TaskController {
         }
     }
 
+    @GetMapping("/{id}/waypoints")
+    public ResponseEntity<Map<String, Object>> getTaskWaypoints(@PathVariable Long id) {
+        try {
+            List<com.derrick.dronelocation.entity.Waypoint> waypoints = taskService.getTaskWaypoints(id);
+            return ResponseEntity.ok(buildSuccessResponse(null, waypoints));
+        } catch (Exception e) {
+            log.error("获取任务航点失败", e);
+            return ResponseEntity.status(500).body(buildErrorResponse("获取任务航点失败: " + e.getMessage()));
+        }
+    }
+
     @GetMapping("/list")
     public ResponseEntity<Map<String, Object>> getAllTasks() {
         try {

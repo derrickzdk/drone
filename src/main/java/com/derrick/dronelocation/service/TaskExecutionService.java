@@ -36,7 +36,7 @@ public class TaskExecutionService extends ServiceImpl<TaskMapper, Task> {
             throw new RuntimeException("任务不存在");
         }
 
-        if (!TaskStatus.SAVED.equals(task.getStatus()) && !TaskStatus.COMPLETED.equals(task.getStatus())) {
+        if (TaskStatus.EXECUTING.equals(task.getStatus())) {
             throw new RuntimeException("任务状态不允许执行");
         }
 
