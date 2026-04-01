@@ -4,7 +4,7 @@ $(document).ready(function() {
     var polyline = null;
     var currentRouteData = null;
     var currentTaskId = null;
-    var executionInterval = null;
+    var executionWorker = null;
     var isProcessing = false;
 
     window.loadRouteFile = function() {
@@ -94,31 +94,10 @@ $(document).ready(function() {
         if (currentTaskId) {
             startTaskExecution(currentTaskId);
         } else {
-            executeRoute();
+            mapUtils.showAlert('请先保存航线为任务', 'warning');
+            isProcessing = false;
         }
     };
-
-    function executeRoute() {
-        var waypoints = currentRouteData.waypoints;
-        var currentIndex = 0;
-        
-        $('#startBtn').prop('disabled', true);
-        $('#stopBtn').prop('disabled', false);
-        
-        executionInterval = setInterval(function() {
-            if (currentIndex >= waypoints.length) {
-                stopExecution();
-                mapUtils.showAlert('任务执行完成', 'success');
-                return;
-            }
-            
-            var wp = waypoints[currentIndex];
-            sendLocationData(wp);
-            
-            currentIndex++;
-            updateProgress(currentIndex, waypoints.length);
-        }, 1000);
-    }
 
     function startTaskExecution(taskId) {
         $.ajax({
@@ -143,64 +122,120 @@ $(document).ready(function() {
     }
 
     function startMonitoring() {
-        executionInterval = setInterval(function() {
-            if (!currentTaskId) {
-                stopExecution();
+        if (executionWorker) {
+            return;
+        }
+        
+        executionWorker = new Worker('/static/js/task-execution-worker.js');
+        var lastTickTime = Date.now();
+        var expectedTickCount = 0;
+        var heartbeatInterval = null;
+        var isPageVisible = !document.hidden;
+        
+        document.addEventListener('visibilitychange', function() {
+            isPageVisible = !document.hidden;
+            if (isPageVisible && executionWorker) {
+                console.log('页面重新可见，检查 Worker 状态');
+                checkWorkerHealth();
+            }
+        });
+        
+        function checkWorkerHealth() {
+            if (!executionWorker) {
                 return;
             }
             
-            $.ajax({
-                url: '/api/task-execution/status/' + currentTaskId,
-                method: 'GET',
-                success: function(response) {
-                    if (response.success) {
-                        var data = response.data;
-                        $('#currentIndex').text(data.currentIndex);
-                        $('#progressBar').css('width', data.progress + '%').text(data.progress.toFixed(1) + '%');
-                        
-                        if (!data.isExecuting) {
-                            stopExecution();
-                            mapUtils.showAlert('任务执行完成', 'success');
-                        }
-                    }
-                },
-                error: function(xhr, status, error) {
-                    console.error('获取执行状态失败:', error);
+            executionWorker.postMessage({ type: 'PING' });
+            
+            setTimeout(function() {
+                var timeSinceLastTick = Date.now() - lastTickTime;
+                if (timeSinceLastTick > 5000) {
+                    console.warn('Worker 可能被节流，重新启动');
+                    restartWorker();
                 }
-            });
-        }, 1000);
-    }
-
-    function sendLocationData(waypoint) {
-        $.ajax({
-            url: '/api/location/send-simple',
-            method: 'POST',
-            data: {
-                sn: currentRouteData.droneSn,
-                lat: waypoint.lat,
-                lng: waypoint.lng,
-                altitude: waypoint.altitude || currentRouteData.flightHeight,
-                speed: waypoint.speed || currentRouteData.flightSpeed
-            },
-            success: function(response) {
-                console.log('发送成功:', response);
-            },
-            error: function(xhr, status, error) {
-                console.error('发送失败:', error);
+            }, 1000);
+        }
+        
+        function restartWorker() {
+            if (executionWorker) {
+                executionWorker.postMessage({ type: 'STOP' });
+                executionWorker.terminate();
             }
-        });
+            
+            executionWorker = new Worker('/static/js/task-execution-worker.js');
+            executionWorker.onmessage = handleWorkerMessage;
+            executionWorker.postMessage({ type: 'START' });
+            lastTickTime = Date.now();
+            console.log('Worker 已重新启动');
+        }
+        
+        function handleWorkerMessage(e) {
+            const { type, timestamp, tickCount } = e.data;
+            
+            if (type === 'TICK') {
+                lastTickTime = timestamp;
+                expectedTickCount = tickCount;
+                
+                if (!currentTaskId) {
+                    stopExecution();
+                    return;
+                }
+                
+                $.ajax({
+                    url: '/api/task-execution/status/' + currentTaskId,
+                    method: 'GET',
+                    success: function(response) {
+                        if (response.success) {
+                            var data = response.data;
+                            $('#currentIndex').text(data.currentIndex);
+                            $('#loopCount').text(data.loopCount);
+                            var progressText = data.progress.toFixed(1) + '%';
+                            if (data.loopCount > 0) {
+                                progressText += ' (第' + data.loopCount + '轮)';
+                            }
+                            $('#progressBar').css('width', data.progress + '%').text(progressText);
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        console.error('获取执行状态失败:', error);
+                    }
+                });
+            } else if (type === 'PONG') {
+                console.log('Worker 心跳正常，tickCount:', tickCount);
+            }
+        }
+        
+        executionWorker.onmessage = handleWorkerMessage;
+        executionWorker.postMessage({ type: 'START' });
+        
+        heartbeatInterval = setInterval(function() {
+            if (!isPageVisible) {
+                checkWorkerHealth();
+            }
+        }, 3000);
+        
+        executionWorker.heartbeatInterval = heartbeatInterval;
     }
 
-    function updateProgress(current, total) {
+    function updateProgress(current, total, loopCount) {
         var progress = (current / total) * 100;
         $('#currentIndex').text(current);
-        $('#progressBar').css('width', progress + '%').text(progress.toFixed(1) + '%');
+        $('#loopCount').text(loopCount);
+        var progressText = progress.toFixed(1) + '%';
+        if (loopCount > 0) {
+            progressText += ' (第' + loopCount + '轮)';
+        }
+        $('#progressBar').css('width', progress + '%').text(progressText);
     }
 
     window.stopExecution = function() {
-        if (executionInterval) {
-            clearInterval(executionInterval);
-            executionInterval = null;
+        if (executionWorker) {
+            executionWorker.postMessage({ type: 'STOP' });
+            if (executionWorker.heartbeatInterval) {
+                clearInterval(executionWorker.heartbeatInterval);
+            }
+            executionWorker.terminate();
+            executionWorker = null;
         }
         
         if (currentTaskId) {

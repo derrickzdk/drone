@@ -2,17 +2,13 @@ package com.derrick.dronelocation.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.derrick.dronelocation.constants.DataSource;
 import com.derrick.dronelocation.constants.DeletedStatus;
-import com.derrick.dronelocation.constants.DefaultDirection;
-import com.derrick.dronelocation.constants.DefaultValues;
 import com.derrick.dronelocation.constants.TaskStatus;
 import com.derrick.dronelocation.entity.Task;
 import com.derrick.dronelocation.entity.Waypoint;
 import com.derrick.dronelocation.mapper.TaskMapper;
 import com.derrick.dronelocation.mapper.WaypointMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -23,13 +19,11 @@ import java.util.concurrent.ConcurrentHashMap;
 public class TaskExecutionService extends ServiceImpl<TaskMapper, Task> {
 
     private final WaypointMapper waypointMapper;
-    private final KafkaProducerService kafkaProducerService;
 
     private final ConcurrentHashMap<Long, TaskExecutionState> executionStates = new ConcurrentHashMap<>();
 
-    public TaskExecutionService(WaypointMapper waypointMapper, KafkaProducerService kafkaProducerService) {
+    public TaskExecutionService(WaypointMapper waypointMapper) {
         this.waypointMapper = waypointMapper;
-        this.kafkaProducerService = kafkaProducerService;
     }
 
     public void startTaskExecution(Long taskId) {
@@ -87,36 +81,8 @@ public class TaskExecutionService extends ServiceImpl<TaskMapper, Task> {
         return executionStates.get(taskId);
     }
 
-    @Scheduled(fixedRate = 1000)
-    public void executeTasks() {
-        executionStates.forEach((taskId, state) -> {
-            try {
-                if (state.isCompleted()) {
-                    stopTaskExecution(taskId);
-                    return;
-                }
-
-                Waypoint waypoint = state.getNextWaypoint();
-                if (waypoint != null) {
-                    kafkaProducerService.sendLocationDataWithNewFormat(
-                            state.getTask().getDroneSn(),
-                            waypoint.getLatitude().doubleValue(),
-                            waypoint.getLongitude().doubleValue(),
-                            waypoint.getAltitude() != null ? waypoint.getAltitude().doubleValue() : DefaultValues.DEFAULT_FLIGHT_HEIGHT.doubleValue(),
-                            waypoint.getSpeed() != null ? waypoint.getSpeed().doubleValue() : DefaultValues.DEFAULT_FLIGHT_SPEED.doubleValue(),
-                            DataSource.TASK_EXECUTION,
-                            DefaultDirection.DEFAULT_DIRECTION
-                    );
-                    
-                    log.debug("发送航点数据，任务ID: {}, 序号: {}, 经度: {}, 纬度: {}", 
-                            taskId, waypoint.getSequenceNum(), 
-                            waypoint.getLongitude(), waypoint.getLatitude());
-                }
-            } catch (Exception e) {
-                log.error("执行任务失败，任务ID: {}", taskId, e);
-                stopTaskExecution(taskId);
-            }
-        });
+    public java.util.Map<Long, TaskExecutionState> getExecutionStates() {
+        return new java.util.concurrent.ConcurrentHashMap<>(executionStates);
     }
 
     public static class TaskExecutionState {
@@ -124,23 +90,32 @@ public class TaskExecutionService extends ServiceImpl<TaskMapper, Task> {
         private final Task task;
         private final List<Waypoint> waypoints;
         private int currentIndex;
+        private int loopCount;
 
         public TaskExecutionState(Long taskId, Task task, List<Waypoint> waypoints) {
             this.taskId = taskId;
             this.task = task;
             this.waypoints = waypoints;
             this.currentIndex = 0;
+            this.loopCount = 0;
         }
 
         public Waypoint getNextWaypoint() {
-            if (currentIndex >= waypoints.size()) {
+            if (waypoints.isEmpty()) {
                 return null;
             }
+            
+            if (currentIndex >= waypoints.size()) {
+                currentIndex = 0;
+                loopCount++;
+                log.info("任务循环执行，任务ID: {}, 开始第 {} 轮循环", taskId, loopCount);
+            }
+            
             return waypoints.get(currentIndex++);
         }
 
         public boolean isCompleted() {
-            return currentIndex >= waypoints.size();
+            return waypoints.isEmpty();
         }
 
         public Long getTaskId() {
@@ -157,6 +132,10 @@ public class TaskExecutionService extends ServiceImpl<TaskMapper, Task> {
 
         public int getTotalWaypoints() {
             return waypoints.size();
+        }
+
+        public int getLoopCount() {
+            return loopCount;
         }
     }
 }

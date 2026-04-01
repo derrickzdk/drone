@@ -52,6 +52,7 @@ public class TaskExecutionController {
             dataMap.put("currentIndex", state != null ? state.getCurrentIndex() : 0);
             dataMap.put("totalWaypoints", state != null ? state.getTotalWaypoints() : 0);
             dataMap.put("progress", calculateProgress(state));
+            dataMap.put("loopCount", state != null ? state.getLoopCount() : 0);
 
             return ResponseEntity.ok(buildSuccessResponse(null, dataMap));
         } catch (Exception e) {

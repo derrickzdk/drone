@@ -4,7 +4,7 @@ server:
 spring:
   datasource:
     # todo 用的时候要改
-    url: jdbc:mysql://10.3.1.10:3306/drone_location?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://10.8.101.2:3306/drone_location?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: root # todo 用的时候要改
     password: 3TRjUcQe.$w#K # todo 用的时候要改
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -14,6 +14,12 @@ spring:
       connection-timeout: 30000
       idle-timeout: 600000
       max-lifetime: 1800000
+
+  task:
+    scheduling:
+      pool:
+        size: 5
+      thread-name-prefix: task-execution-
 
   mybatis-plus:
     configuration:
@@ -41,9 +47,9 @@ spring:
 
 kafka:
   # dev
-  bootstrap-servers: 10.3.0.70:9092 # todo 用的时候要改
+  # bootstrap-servers: 10.3.0.70:9092 # todo 用的时候要改
   # prod
-  # bootstrap-servers: 10.8.100.23:9092
+  bootstrap-servers: 10.8.100.23:9092
   topic:
     drone-location: hxs_uav_fly_data # todo 用的时候要改
   producer:
