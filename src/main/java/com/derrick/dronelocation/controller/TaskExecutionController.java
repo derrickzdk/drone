@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import javax.servlet.http.HttpServletRequest;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -20,10 +21,22 @@ public class TaskExecutionController {
     }
 
     @PostMapping("/start/{taskId}")
-    public ResponseEntity<Map<String, Object>> startExecution(@PathVariable Long taskId) {
+    public ResponseEntity<Map<String, Object>> startExecution(@PathVariable Long taskId, HttpServletRequest request) {
         try {
             taskExecutionService.startTaskExecution(taskId);
-            return ResponseEntity.ok(buildSuccessResponse("开始执行任务", null));
+            
+            Map<String, Object> data = new HashMap<>();
+            data.put("taskId", taskId);
+            
+            String scheme = request.isSecure() ? "wss" : "ws";
+            String serverName = request.getServerName();
+            int serverPort = request.getServerPort();
+            String contextPath = request.getContextPath();
+            String websocketUrl = scheme + "://" + serverName + ":" + serverPort + contextPath + "/ws/task-execution/" + taskId;
+            
+            data.put("websocketUrl", websocketUrl);
+            
+            return ResponseEntity.ok(buildSuccessResponse("开始执行任务", data));
         } catch (Exception e) {
             log.error("开始执行任务失败", e);
             return ResponseEntity.status(500).body(buildErrorResponse("开始执行任务失败: " + e.getMessage()));

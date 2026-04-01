@@ -73,6 +73,21 @@ public class TaskExecutionService extends ServiceImpl<TaskMapper, Task> {
         }
     }
 
+    public void stopTaskExecutionByTimeout(Long taskId) {
+        TaskExecutionState state = executionStates.remove(taskId);
+        if (state != null) {
+            LambdaQueryWrapper<Task> queryWrapper = new LambdaQueryWrapper<>();
+            queryWrapper.eq(Task::getId, taskId);
+            Task task = this.getOne(queryWrapper);
+            if (task != null) {
+                task.setStatus(TaskStatus.COMPLETED);
+                this.updateById(task);
+            }
+            log.warn("心跳超时停止任务，任务ID: {}, 已发送航点: {}/{}", 
+                    taskId, state.getCurrentIndex(), state.getTotalWaypoints());
+        }
+    }
+
     public boolean isTaskExecuting(Long taskId) {
         return executionStates.containsKey(taskId);
     }

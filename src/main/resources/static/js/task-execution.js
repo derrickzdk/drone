@@ -5,7 +5,11 @@ $(document).ready(function() {
     var currentRouteData = null;
     var currentTaskId = null;
     var executionWorker = null;
+    var webSocket = null;
     var isProcessing = false;
+    var heartbeatInterval = null;
+    var reconnectAttempts = 0;
+    var maxReconnectAttempts = 3;
 
     loadTaskList();
 
@@ -209,7 +213,14 @@ $(document).ready(function() {
                 if (response.success) {
                     $('#startBtn').prop('disabled', true);
                     $('#stopBtn').prop('disabled', false);
-                    startMonitoring();
+                    
+                    if (response.data && response.data.websocketUrl) {
+                        connectWebSocket(response.data.websocketUrl);
+                    } else {
+                        mapUtils.showAlert('WebSocket URL 获取失败，降级到轮询模式', 'warning');
+                        startMonitoring();
+                    }
+                    
                     mapUtils.showAlert('任务开始执行', 'success');
                 } else {
                     mapUtils.showAlert('启动失败: ' + response.message, 'danger');
@@ -221,6 +232,118 @@ $(document).ready(function() {
                 isProcessing = false;
             }
         });
+    }
+
+    function connectWebSocket(websocketUrl) {
+        if (webSocket) {
+            webSocket.close();
+        }
+
+        try {
+            webSocket = new WebSocket(websocketUrl);
+            
+            webSocket.onopen = function() {
+                console.log('WebSocket 连接已建立');
+                reconnectAttempts = 0;
+                startHeartbeat();
+            };
+            
+            webSocket.onmessage = function(event) {
+                try {
+                    var message = JSON.parse(event.data);
+                    handleWebSocketMessage(message);
+                } catch (e) {
+                    console.error('解析 WebSocket 消息失败:', e);
+                }
+            };
+            
+            webSocket.onclose = function(event) {
+                console.log('WebSocket 连接已关闭，代码:', event.code, '原因:', event.reason);
+                stopHeartbeat();
+                
+                if (currentTaskId && reconnectAttempts < maxReconnectAttempts) {
+                    reconnectAttempts++;
+                    console.log('尝试重新连接，第', reconnectAttempts, '次');
+                    setTimeout(function() {
+                        connectWebSocket(websocketUrl);
+                    }, 3000);
+                } else if (currentTaskId) {
+                    mapUtils.showAlert('WebSocket 连接断开，任务已停止', 'warning');
+                    stopExecution();
+                }
+            };
+            
+            webSocket.onerror = function(error) {
+                console.error('WebSocket 错误:', error);
+            };
+            
+        } catch (e) {
+            console.error('创建 WebSocket 连接失败:', e);
+            mapUtils.showAlert('WebSocket 连接失败，降级到轮询模式', 'warning');
+            startMonitoring();
+        }
+    }
+
+    function handleWebSocketMessage(message) {
+        switch (message.type) {
+            case 'HEARTBEAT_ACK':
+                console.log('收到心跳确认');
+                break;
+                
+            case 'STATUS_UPDATE':
+                if (message.data) {
+                    updateProgressDisplay(message.data);
+                }
+                break;
+                
+            case 'TASK_STOPPED':
+                console.log('任务已停止，原因:', message.reason);
+                mapUtils.showAlert('任务已停止: ' + message.reason, 'info');
+                stopExecution();
+                break;
+                
+            case 'ERROR':
+                console.error('收到错误消息:', message.message);
+                mapUtils.showAlert('错误: ' + message.message, 'danger');
+                break;
+                
+            default:
+                console.log('未知消息类型:', message.type);
+        }
+    }
+
+    function updateProgressDisplay(data) {
+        $('#currentIndex').text(data.currentIndex);
+        $('#loopCount').text(data.loopCount);
+        var progressText = data.progress.toFixed(1) + '%';
+        if (data.loopCount > 0) {
+            progressText += ' (第' + data.loopCount + '轮)';
+        }
+        $('#progressBar').css('width', data.progress + '%').text(progressText);
+    }
+
+    function startHeartbeat() {
+        if (heartbeatInterval) {
+            clearInterval(heartbeatInterval);
+        }
+        
+        heartbeatInterval = setInterval(function() {
+            if (webSocket && webSocket.readyState === WebSocket.OPEN) {
+                var heartbeatMessage = {
+                    type: 'HEARTBEAT',
+                    timestamp: Date.now()
+                };
+                webSocket.send(JSON.stringify(heartbeatMessage));
+                console.log('发送心跳');
+            }
+        }, 30000);
+    }
+
+    function stopHeartbeat() {
+        if (heartbeatInterval) {
+            clearInterval(heartbeatInterval);
+            heartbeatInterval = null;
+        }
     }
 
     function startMonitoring() {
@@ -331,14 +454,7 @@ $(document).ready(function() {
     }
 
     window.stopExecution = function() {
-        if (executionWorker) {
-            executionWorker.postMessage({ type: 'STOP' });
-            if (executionWorker.heartbeatInterval) {
-                clearInterval(executionWorker.heartbeatInterval);
-            }
-            executionWorker.terminate();
-            executionWorker = null;
-        }
+        stopHeartbeat();
         
         if (currentTaskId) {
             $.ajax({
@@ -351,13 +467,48 @@ $(document).ready(function() {
                 },
                 error: function(xhr, status, error) {
                     console.error('停止失败:', error);
+                },
+                complete: function() {
+                    if (webSocket) {
+                        webSocket.close();
+                        webSocket = null;
+                    }
+                    
+                    if (executionWorker) {
+                        executionWorker.postMessage({ type: 'STOP' });
+                        if (executionWorker.heartbeatInterval) {
+                            clearInterval(executionWorker.heartbeatInterval);
+                        }
+                        executionWorker.terminate();
+                        executionWorker = null;
+                    }
+                    
+                    $('#startBtn').prop('disabled', false);
+                    $('#stopBtn').prop('disabled', true);
+                    isProcessing = false;
+                    reconnectAttempts = 0;
                 }
             });
+        } else {
+            if (webSocket) {
+                webSocket.close();
+                webSocket = null;
+            }
+            
+            if (executionWorker) {
+                executionWorker.postMessage({ type: 'STOP' });
+                if (executionWorker.heartbeatInterval) {
+                    clearInterval(executionWorker.heartbeatInterval);
+                }
+                executionWorker.terminate();
+                executionWorker = null;
+            }
+            
+            $('#startBtn').prop('disabled', false);
+            $('#stopBtn').prop('disabled', true);
+            isProcessing = false;
+            reconnectAttempts = 0;
         }
-        
-        $('#startBtn').prop('disabled', false);
-        $('#stopBtn').prop('disabled', true);
-        isProcessing = false;
     };
 
     window.saveAsTask = function() {
