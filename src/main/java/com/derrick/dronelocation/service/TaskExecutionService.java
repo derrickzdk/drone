@@ -10,6 +10,7 @@ import com.derrick.dronelocation.mapper.TaskMapper;
 import com.derrick.dronelocation.mapper.WaypointMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -26,6 +27,7 @@ public class TaskExecutionService extends ServiceImpl<TaskMapper, Task> {
         this.waypointMapper = waypointMapper;
     }
 
+    @Transactional
     public void startTaskExecution(Long taskId) {
         LambdaQueryWrapper<Task> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(Task::getId, taskId);
@@ -37,7 +39,11 @@ public class TaskExecutionService extends ServiceImpl<TaskMapper, Task> {
         }
 
         if (TaskStatus.EXECUTING.equals(task.getStatus())) {
-            throw new RuntimeException("任务状态不允许执行");
+            if (executionStates.containsKey(taskId)) {
+                throw new RuntimeException("任务正在执行中，请先停止当前执行");
+            }
+            log.warn("任务状态为EXECUTING但内存中无执行状态，重置状态允许重新执行，任务ID: {}", taskId);
+            task.setStatus(TaskStatus.SAVED);
         }
 
         LambdaQueryWrapper<Waypoint> waypointQueryWrapper = new LambdaQueryWrapper<>();
@@ -50,41 +56,57 @@ public class TaskExecutionService extends ServiceImpl<TaskMapper, Task> {
             throw new RuntimeException("任务没有航点数据");
         }
 
+        task.setStatus(TaskStatus.EXECUTING);
+        this.updateById(task);
+
         TaskExecutionState state = new TaskExecutionState(taskId, task, waypoints);
         executionStates.put(taskId, state);
 
-        task.setStatus(TaskStatus.EXECUTING);
-        this.updateById(task);
         log.info("开始执行任务，任务ID: {}, 航点数: {}", taskId, waypoints.size());
     }
 
+    @Transactional
     public void stopTaskExecution(Long taskId) {
         TaskExecutionState state = executionStates.remove(taskId);
+        
+        LambdaQueryWrapper<Task> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(Task::getId, taskId);
+        Task task = this.getOne(queryWrapper);
+        
+        if (task != null && TaskStatus.EXECUTING.equals(task.getStatus())) {
+            task.setStatus(TaskStatus.COMPLETED);
+            this.updateById(task);
+            log.info("更新任务状态为COMPLETED，任务ID: {}", taskId);
+        } else if (task != null) {
+            log.warn("停止任务时任务状态不是EXECUTING，任务ID: {}, 当前状态: {}", taskId, task.getStatus());
+        }
+        
         if (state != null) {
-            LambdaQueryWrapper<Task> queryWrapper = new LambdaQueryWrapper<>();
-            queryWrapper.eq(Task::getId, taskId);
-            Task task = this.getOne(queryWrapper);
-            if (task != null) {
-                task.setStatus(TaskStatus.COMPLETED);
-                this.updateById(task);
-            }
             log.info("停止执行任务，任务ID: {}, 已发送航点: {}/{}", 
                     taskId, state.getCurrentIndex(), state.getTotalWaypoints());
+        } else {
+            log.warn("停止任务时内存中无执行状态，任务ID: {}", taskId);
         }
     }
 
+    @Transactional
     public void stopTaskExecutionByTimeout(Long taskId) {
         TaskExecutionState state = executionStates.remove(taskId);
+        
+        LambdaQueryWrapper<Task> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(Task::getId, taskId);
+        Task task = this.getOne(queryWrapper);
+        
+        if (task != null && TaskStatus.EXECUTING.equals(task.getStatus())) {
+            task.setStatus(TaskStatus.COMPLETED);
+            this.updateById(task);
+        }
+        
         if (state != null) {
-            LambdaQueryWrapper<Task> queryWrapper = new LambdaQueryWrapper<>();
-            queryWrapper.eq(Task::getId, taskId);
-            Task task = this.getOne(queryWrapper);
-            if (task != null) {
-                task.setStatus(TaskStatus.COMPLETED);
-                this.updateById(task);
-            }
             log.warn("心跳超时停止任务，任务ID: {}, 已发送航点: {}/{}", 
                     taskId, state.getCurrentIndex(), state.getTotalWaypoints());
+        } else {
+            log.warn("心跳超时停止任务时内存中无执行状态，任务ID: {}", taskId);
         }
     }
 
