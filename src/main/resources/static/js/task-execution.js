@@ -9,7 +9,8 @@ $(document).ready(function() {
     var isProcessing = false;
     var heartbeatInterval = null;
     var reconnectAttempts = 0;
-    var maxReconnectAttempts = 3;
+    var maxReconnectAttempts = 15;
+    var websocketUrl = null;
 
     loadTaskList();
 
@@ -24,7 +25,7 @@ $(document).ready(function() {
                     taskSelect.append('<option value="">请选择任务...</option>');
                     
                     response.data.forEach(function(task) {
-                        taskSelect.append('<option value="' + task.id + '">' + task.taskName + ' (ID: ' + task.id + ', 航点数: ' + task.totalWaypoints + ')</option>');
+                        taskSelect.append('<option value="' + task.id + '">' + task.taskName + ' (SN: ' + task.droneSn + ', 航点数: ' + task.totalWaypoints + ')</option>');
                     });
                 }
             },
@@ -234,20 +235,21 @@ $(document).ready(function() {
         });
     }
 
-    function connectWebSocket(websocketUrl) {
+    function connectWebSocket(url) {
+        websocketUrl = url;
         if (webSocket) {
             webSocket.close();
         }
 
         try {
             webSocket = new WebSocket(websocketUrl);
-            
+
             webSocket.onopen = function() {
                 console.log('WebSocket 连接已建立');
                 reconnectAttempts = 0;
                 startHeartbeat();
             };
-            
+
             webSocket.onmessage = function(event) {
                 try {
                     var message = JSON.parse(event.data);
@@ -256,27 +258,27 @@ $(document).ready(function() {
                     console.error('解析 WebSocket 消息失败:', e);
                 }
             };
-            
+
             webSocket.onclose = function(event) {
                 console.log('WebSocket 连接已关闭，代码:', event.code, '原因:', event.reason);
                 stopHeartbeat();
-                
+
                 if (currentTaskId && reconnectAttempts < maxReconnectAttempts) {
                     reconnectAttempts++;
-                    console.log('尝试重新连接，第', reconnectAttempts, '次');
+                    var delay = Math.min(2000 * Math.pow(2, reconnectAttempts - 1), 15000);
+                    console.log('尝试重新连接，第', reconnectAttempts, '次，延迟:', delay, 'ms');
                     setTimeout(function() {
                         connectWebSocket(websocketUrl);
-                    }, 3000);
+                    }, delay);
                 } else if (currentTaskId) {
-                    mapUtils.showAlert('WebSocket 连接断开，任务已停止', 'warning');
-                    stopExecution();
+                    mapUtils.showAlert('WebSocket 重连次数耗尽，等待服务端超时机制处理', 'warning');
                 }
             };
-            
+
             webSocket.onerror = function(error) {
                 console.error('WebSocket 错误:', error);
             };
-            
+
         } catch (e) {
             console.error('创建 WebSocket 连接失败:', e);
             mapUtils.showAlert('WebSocket 连接失败，降级到轮询模式', 'warning');

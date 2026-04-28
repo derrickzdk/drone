@@ -15,6 +15,9 @@ public class HeartbeatConfig {
     @Value("${heartbeat.check-interval:10000}")
     private long checkInterval;
 
+    @Value("${heartbeat.reconnect-wait-timeout:120000}")
+    private long reconnectWaitTimeout;
+
     public long getHeartbeatInterval() {
         return heartbeatInterval;
     }
@@ -25,5 +28,9 @@ public class HeartbeatConfig {
 
     public long getCheckInterval() {
         return checkInterval;
+    }
+
+    public long getReconnectWaitTimeout() {
+        return reconnectWaitTimeout;
     }
 }

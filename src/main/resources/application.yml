@@ -5,8 +5,8 @@ spring:
   datasource:
     # todo 用的时候要改
     url: jdbc:mysql://10.8.101.2:3306/drone_location?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    username: root # todo 用的时候要改
-    password: 3TRjUcQe.$w#K # todo 用的时候要改
+    username: root # 2todo 用的时候要改
+    password: root # todo 用的时候要改
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 10
@@ -60,6 +60,12 @@ kafka:
     batch-size: 16384
     linger-ms: 0
     buffer-memory: 33554432
+
+heartbeat:
+  interval: 10000
+  timeout: 30000
+  check-interval: 5000
+  reconnect-wait-timeout: 120000
 
 logging:
   level:

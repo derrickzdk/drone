@@ -13,8 +13,10 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 @Component
@@ -27,6 +29,7 @@ public class TaskExecutionWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
 
     private final ScheduledExecutorService statusUpdateScheduler = Executors.newScheduledThreadPool(1);
+    private final ConcurrentHashMap<Long, ScheduledFuture<?>> statusUpdateFutures = new ConcurrentHashMap<>();
 
     public TaskExecutionWebSocketHandler(HeartbeatManager heartbeatManager,
                                         TaskExecutionService taskExecutionService,
@@ -48,7 +51,7 @@ public class TaskExecutionWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        if (!taskExecutionService.isTaskExecuting(taskId)) {
+        if (!taskExecutionService.isTaskExecuting(taskId) && !heartbeatManager.isPendingReconnect(taskId)) {
             log.warn("任务未在执行中，拒绝连接，任务ID: {}", taskId);
             sendErrorMessage(session, "任务未在执行中");
             session.close();
@@ -92,16 +95,9 @@ public class TaskExecutionWebSocketHandler extends TextWebSocketHandler {
         Long taskId = extractTaskId(uri);
 
         if (taskId != null) {
-            heartbeatManager.removeSession(taskId);
-            
-            if (taskExecutionService.isTaskExecuting(taskId)) {
-                log.warn("WebSocket 连接意外关闭，立即停止任务，任务ID: {}, 会话ID: {}, 状态: {}", 
-                        taskId, session.getId(), status);
-                taskExecutionService.stopTaskExecutionByTimeout(taskId);
-            } else {
-                log.info("WebSocket 连接正常关闭，任务ID: {}, 会话ID: {}, 状态: {}", 
-                        taskId, session.getId(), status);
-            }
+            cancelStatusUpdate(taskId);
+            log.info("WebSocket 连接已关闭，任务ID: {}, 会话ID: {}, 状态: {}", taskId, session.getId(), status);
+            heartbeatManager.markSessionDisconnected(taskId);
         }
     }
 
@@ -111,15 +107,7 @@ public class TaskExecutionWebSocketHandler extends TextWebSocketHandler {
         Long taskId = extractTaskId(uri);
 
         log.error("WebSocket 传输错误，任务ID: {}, 会话ID: {}", taskId, session.getId(), exception);
-
-        if (taskId != null) {
-            heartbeatManager.removeSession(taskId);
-            
-            if (taskExecutionService.isTaskExecuting(taskId)) {
-                log.warn("WebSocket 传输错误，立即停止任务，任务ID: {}", taskId);
-                taskExecutionService.stopTaskExecutionByTimeout(taskId);
-            }
-        }
+        // 不做任何停止操作，等 afterConnectionClosed 统一处理
     }
 
     private void handleHeartbeat(Long taskId, WebSocketSession session) {
@@ -133,9 +121,18 @@ public class TaskExecutionWebSocketHandler extends TextWebSocketHandler {
         log.debug("处理心跳，任务ID: {}", taskId);
     }
 
+    private void cancelStatusUpdate(Long taskId) {
+        ScheduledFuture<?> future = statusUpdateFutures.remove(taskId);
+        if (future != null) {
+            future.cancel(false);
+        }
+    }
+
     private void startStatusUpdate(Long taskId, WebSocketSession session) {
-        statusUpdateScheduler.scheduleAtFixedRate(() -> {
+        cancelStatusUpdate(taskId);
+        ScheduledFuture<?> future = statusUpdateScheduler.scheduleAtFixedRate(() -> {
             if (!session.isOpen()) {
+                cancelStatusUpdate(taskId);
                 return;
             }
 
@@ -158,6 +155,7 @@ public class TaskExecutionWebSocketHandler extends TextWebSocketHandler {
                 log.error("发送状态更新失败，任务ID: {}", taskId, e);
             }
         }, 0, 1, TimeUnit.SECONDS);
+        statusUpdateFutures.put(taskId, future);
     }
 
     private double calculateProgress(TaskExecutionService.TaskExecutionState state) {

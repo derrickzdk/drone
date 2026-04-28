@@ -19,6 +19,7 @@ public class HeartbeatManager {
     private final TaskExecutionService taskExecutionService;
 
     private final Map<Long, SessionInfo> activeSessions = new ConcurrentHashMap<>();
+    private final Map<Long, Long> pendingReconnectSessions = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
     public HeartbeatManager(HeartbeatConfig heartbeatConfig, TaskExecutionService taskExecutionService) {
@@ -28,6 +29,7 @@ public class HeartbeatManager {
     }
 
     public void registerSession(Long taskId, WebSocketSession session) {
+        pendingReconnectSessions.remove(taskId);
         SessionInfo sessionInfo = new SessionInfo(session, System.currentTimeMillis());
         activeSessions.put(taskId, sessionInfo);
         log.info("注册 WebSocket 会话，任务ID: {}, 会话ID: {}", taskId, session.getId());
@@ -46,6 +48,17 @@ public class HeartbeatManager {
         if (removed != null) {
             log.info("移除 WebSocket 会话，任务ID: {}", taskId);
         }
+        pendingReconnectSessions.remove(taskId);
+    }
+
+    public void markSessionDisconnected(Long taskId) {
+        activeSessions.remove(taskId);
+        pendingReconnectSessions.put(taskId, System.currentTimeMillis());
+        log.info("任务进入待重连状态，任务ID: {}", taskId);
+    }
+
+    public boolean isPendingReconnect(Long taskId) {
+        return pendingReconnectSessions.containsKey(taskId);
     }
 
     public boolean hasActiveSession(Long taskId) {
@@ -76,6 +89,30 @@ public class HeartbeatManager {
                     taskExecutionService.stopTaskExecutionByTimeout(taskId);
                 } catch (Exception e) {
                     log.error("处理超时会话失败，任务ID: {}", taskId, e);
+                }
+                return true;
+            }
+            return false;
+        });
+
+        checkPendingReconnects();
+    }
+
+    private void checkPendingReconnects() {
+        long currentTime = System.currentTimeMillis();
+        long reconnectWaitTimeout = heartbeatConfig.getReconnectWaitTimeout();
+
+        pendingReconnectSessions.entrySet().removeIf(entry -> {
+            Long taskId = entry.getKey();
+            long disconnectedAt = entry.getValue();
+            long elapsed = currentTime - disconnectedAt;
+
+            if (elapsed > reconnectWaitTimeout) {
+                log.warn("待重连等待超时，停止任务，任务ID: {}, 等待时间: {}ms", taskId, elapsed);
+                try {
+                    taskExecutionService.stopTaskExecutionByTimeout(taskId);
+                } catch (Exception e) {
+                    log.error("处理待重连超时失败，任务ID: {}", taskId, e);
                 }
                 return true;
             }
