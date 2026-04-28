@@ -123,17 +123,12 @@
                     </div>
                     <div class="card-body">
                         <div class="row">
-                            <div class="col-md-4">
-                                <button class="btn btn-success w-100" id="startBtn" onclick="startExecution()" disabled>
-                                    <i class="fas fa-play"></i> 开始执行
+                            <div class="col-md-6">
+                                <button class="btn btn-danger w-100" id="stopAllBtn" onclick="stopAllExecution()" disabled>
+                                    <i class="fas fa-stop-circle"></i> 全部停止
                                 </button>
                             </div>
-                            <div class="col-md-4">
-                                <button class="btn btn-danger w-100" id="stopBtn" onclick="stopExecution()" disabled>
-                                    <i class="fas fa-stop"></i> 停止执行
-                                </button>
-                            </div>
-                            <div class="col-md-4">
+                            <div class="col-md-6">
                                 <button class="btn btn-warning w-100" onclick="saveAsTask()">
                                     <i class="fas fa-save"></i> 保存为任务
                                 </button>
@@ -147,33 +142,14 @@
         <div class="row mt-4">
             <div class="col-12">
                 <div class="card animate-slide-up" style="animation-delay: 0.2s;">
-                    <div class="card-header">
-                        <i class="fas fa-tachometer-alt"></i> 执行状态
+                    <div class="card-header d-flex align-items-center gap-2">
+                        <i class="fas fa-tachometer-alt"></i> 正在执行的任务
+                        <span class="badge bg-secondary" id="executingCount">0</span>
                     </div>
                     <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-3">
-                                <div class="stats-card">
-                                    <div class="stats-number" id="totalWaypoints">0</div>
-                                    <div class="stats-label">总航点数</div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="stats-card">
-                                    <div class="stats-number" id="currentIndex">0</div>
-                                    <div class="stats-label">当前航点</div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="stats-card">
-                                    <div class="stats-number" id="loopCount">0</div>
-                                    <div class="stats-label">循环轮数</div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="progress mt-3">
-                                    <div class="progress-bar" id="progressBar" role="progressbar" style="width: 0%">0%</div>
-                                </div>
+                        <div id="executingTasksList">
+                            <div class="text-center text-muted py-3" id="noTasksMsg">
+                                <i class="fas fa-info-circle me-1"></i> 暂无正在执行的任务，请从上方选择任务并加载航线
                             </div>
                         </div>
                     </div>
